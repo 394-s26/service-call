@@ -5,9 +5,7 @@ import { SearchBar } from "./SearchBar";
 describe("SearchBar", () => {
   it("renders with default placeholder", () => {
     render(<SearchBar onSearch={vi.fn()} />);
-    expect(
-      screen.getByPlaceholderText("Search services, providers...")
-    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Search services near you…")).toBeInTheDocument();
   });
 
   it("renders with custom placeholder", () => {
@@ -18,13 +16,15 @@ describe("SearchBar", () => {
   it("calls onSearch with input value", () => {
     const handleSearch = vi.fn();
     render(<SearchBar onSearch={handleSearch} />);
-    const input = screen.getByRole("searchbox");
+    const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "plumbing" } });
     expect(handleSearch).toHaveBeenCalledWith("plumbing");
   });
 
-  it("renders filter button", () => {
+  it("shows clear control after typing", () => {
     render(<SearchBar onSearch={vi.fn()} />);
-    expect(screen.getByRole("button", { name: /filter/i })).toBeInTheDocument();
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "x" } });
+    expect(screen.getByRole("button")).toBeInTheDocument();
   });
 });

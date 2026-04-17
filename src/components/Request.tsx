@@ -12,6 +12,7 @@ interface RequestForm {
   description: string;
   urgency: "scheduled" | "urgent";
   providerId: string;
+  openToAnyHelper: boolean;
   address: string;
   scheduledDate: string;
 }
@@ -21,11 +22,12 @@ const INITIAL_FORM: RequestForm = {
   description: "",
   urgency: "scheduled",
   providerId: "",
+  openToAnyHelper: true,
   address: "",
   scheduledDate: "",
 };
 
-const STEP_LABELS = ["Service", "Nearby", "Choose Pro", "Details", "Confirm"];
+const STEP_LABELS = ["Task", "Nearby", "Choose Helper", "Details", "Confirm"];
 const GOOGLE_MAPS_API = import.meta.env.VITE_GOOGLE_MAPS_API;
 
 export const Request = () => {
@@ -95,31 +97,33 @@ export const Request = () => {
   const goBack = () => setStep((s) => Math.max(1, s - 1) as Step);
 
   const step1Valid = !!form.categoryId && form.description.trim().length > 0;
-  const step3Valid = !!form.providerId;
+  const step3Valid = !!form.providerId || form.openToAnyHelper;
   const step4Valid = form.address.trim().length > 0 && isValidAddress(form.address);
 
   const handleSubmit = async () => {
     if (!user) { navigate("/account"); return; }
-    if (!selectedProvider) return;
     setLoading(true);
     await new Promise((res) => setTimeout(res, 1200));
+    const isOpenRequest = form.openToAnyHelper || !selectedProvider;
     const newRequest: ServiceRequest = {
       id: `req-${Date.now()}`,
       userId: user.uid,
-      providerId: selectedProvider.id,
+      providerId: isOpenRequest ? "unassigned" : selectedProvider?.id ?? "unassigned",
       categoryId: form.categoryId,
       description: form.description,
       status: "pending",
       createdAt: new Date(),
       updatedAt: new Date(),
       address: form.address,
-      inspectionFee: selectedProvider.inspectionFee,
+      inspectionFee: isOpenRequest ? undefined : selectedProvider?.inspectionFee,
     };
     addRequest(newRequest);
     addNotification({
       userId: user.uid,
-      title: "Request Submitted!",
-      body: `Your request has been sent to ${selectedProvider.businessName || selectedProvider.name}.`,
+      title: isOpenRequest ? "Open Request Posted!" : "Request Posted!",
+      body: isOpenRequest
+        ? "Your request is now live. Nearby helpers can respond."
+        : `Your request has been sent to ${selectedProvider.businessName || selectedProvider.name}.`,
       read: false,
       requestId: newRequest.id,
     });
@@ -133,13 +137,23 @@ export const Request = () => {
         <div className="w-20 h-20 rounded-3xl bg-emerald-50 flex items-center justify-center mb-5">
           <span className="text-4xl">✅</span>
         </div>
-        <h2 className="text-2xl font-black text-gray-900 mb-2">Request Sent!</h2>
+        <h2 className="text-2xl font-black text-gray-900 mb-2">Request Posted!</h2>
         <p className="text-sm text-gray-500 mb-2 max-w-xs">
-          Your request has been sent to <strong>{selectedProvider?.businessName || selectedProvider?.name}</strong>.
+          {selectedProvider ? (
+            <>
+              Your request has been sent to <strong>{selectedProvider.businessName || selectedProvider.name}</strong>.
+            </>
+          ) : (
+            <>Your request is now open for nearby helpers to respond.</>
+          )}
         </p>
-        <p className="text-xs text-gray-400 mb-8 max-w-xs">They'll review it and reach out to schedule an inspection visit.</p>
+        <p className="text-xs text-gray-400 mb-8 max-w-xs">
+          {selectedProvider
+            ? "They will message you to confirm timing and details."
+            : "You will get notified when someone nearby accepts."}
+        </p>
         <div className="bg-blue-50 rounded-2xl p-4 mb-8 text-left w-full max-w-xs">
-          {["Business reviews & accepts your request","They visit to inspect and assess the job","You receive a custom quote","Accept & pay only on completion"].map((s, i) => (
+          {["Nearby helper sees your request","They message you to confirm details","You both agree on a price and timing","Pay only after the help is done"].map((s, i) => (
             <div key={i} className="flex items-center gap-3 mb-2 last:mb-0">
               <div className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-black flex items-center justify-center flex-shrink-0">{i + 1}</div>
               <p className="text-xs text-blue-700">{s}</p>
@@ -168,7 +182,7 @@ export const Request = () => {
             </svg>
           </button>
           <div className="flex-1">
-            <h1 className="text-base font-black text-gray-900">Book a Service</h1>
+            <h1 className="text-base font-black text-gray-900">Post a Help Request</h1>
             <p className="text-xs text-gray-400">{STEP_LABELS[step - 1]}</p>
           </div>
           <span className="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded-full">{step}/5</span>
@@ -191,7 +205,7 @@ export const Request = () => {
         {step === 1 && (
           <>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <h3 className="text-sm font-black text-gray-900 mb-3">What do you need? <span className="text-red-400">*</span></h3>
+              <h3 className="text-sm font-black text-gray-900 mb-3">What do you need help with? <span className="text-red-400">*</span></h3>
               <div className="grid grid-cols-3 gap-2">
                 {MOCK_CATEGORIES.map((cat) => (
                   <button key={cat.id} onClick={() => handleChange("categoryId", cat.id)}
@@ -204,12 +218,12 @@ export const Request = () => {
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <h3 className="text-sm font-black text-gray-900 mb-2">Describe the issue <span className="text-red-400">*</span></h3>
               <textarea value={form.description} onChange={(e) => handleChange("description", e.target.value)}
-                placeholder="e.g. Leaking pipe under kitchen sink, water pooling on floor…" rows={4} maxLength={500}
+                placeholder="e.g. Running faucet in kitchen, need someone nearby to help tighten/fix it..." rows={4} maxLength={500}
                 className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-blue-300 focus:bg-white transition-colors resize-none" />
               <p className="text-xs text-gray-400 mt-1">{form.description.length}/500</p>
             </div>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-              <h3 className="text-sm font-black text-gray-900 mb-3">When do you need it?</h3>
+              <h3 className="text-sm font-black text-gray-900 mb-3">How soon do you need help?</h3>
               <div className="grid grid-cols-2 gap-3">
                 {(["scheduled", "urgent"] as const).map((u) => (
                   <button key={u} onClick={() => handleChange("urgency", u)}
@@ -219,9 +233,21 @@ export const Request = () => {
                 ))}
               </div>
             </div>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <h3 className="text-sm font-black text-gray-900 mb-3">Helper preference</h3>
+              <button
+                onClick={() => handleChange("openToAnyHelper", !form.openToAnyHelper)}
+                className={`w-full text-left rounded-xl p-3 border-2 transition-all ${form.openToAnyHelper ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}
+              >
+                <p className="text-sm font-bold text-gray-800">{form.openToAnyHelper ? "Open request (faster responses)" : "Choose a specific helper"}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {form.openToAnyHelper ? "Any nearby helper can claim this request." : "You will pick who gets this request."}
+                </p>
+              </button>
+            </div>
             <button onClick={() => step1Valid && goNext()} disabled={!step1Valid}
               className={`w-full py-4 rounded-2xl text-sm font-black transition-all ${step1Valid ? "bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98]" : "bg-gray-100 text-gray-400"}`}>
-              See Available Providers →
+              {form.openToAnyHelper ? "Continue to details →" : "See Nearby Helpers →"}
             </button>
           </>
         )}
@@ -229,23 +255,44 @@ export const Request = () => {
         {/* Step 2: Nearby Providers */}
         {step === 2 && (
           <>
+            {form.openToAnyHelper ? (
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+                <p className="text-3xl mb-2">⚡</p>
+                <h3 className="font-black text-gray-800 mb-1">Open request mode</h3>
+                <p className="text-sm text-gray-500 mb-4">You skipped helper selection so anyone nearby can accept faster.</p>
+                <button onClick={() => setStep(4)} className="w-full bg-blue-500 text-white font-bold px-6 py-3 rounded-2xl text-sm">
+                  Continue to Details
+                </button>
+                <button onClick={() => handleChange("openToAnyHelper", false)} className="w-full mt-2 bg-blue-50 text-blue-600 font-bold px-6 py-3 rounded-2xl text-sm">
+                  Switch to choose helper
+                </button>
+              </div>
+            ) : (
+              <>
             <div className="flex items-center gap-2 mb-1">
               <span className="text-2xl">{selectedCategory?.icon}</span>
               <div>
-                <h3 className="text-sm font-black text-gray-900">{selectedCategory?.name} Providers</h3>
+                <h3 className="text-sm font-black text-gray-900">{selectedCategory?.name} Helpers</h3>
                 <p className="text-xs text-gray-400">📍 Near {userLocation}</p>
               </div>
             </div>
             {matchingProviders.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center">
                 <p className="text-4xl mb-3">🔍</p>
-                <h3 className="font-black text-gray-800 mb-2">No Services Available</h3>
-                <p className="text-sm text-gray-500 mb-4">There are currently no {selectedCategory?.name.toLowerCase()} providers in your area.</p>
-                <button onClick={goBack} className="bg-blue-50 text-blue-600 font-bold px-6 py-3 rounded-2xl text-sm">Try a Different Category</button>
+                <h3 className="font-black text-gray-800 mb-2">No Helpers Available</h3>
+                <p className="text-sm text-gray-500 mb-4">There are currently no {selectedCategory?.name.toLowerCase()} helpers in your area.</p>
+                <div className="flex flex-col gap-2">
+                  <button onClick={() => setStep(4)} className="bg-blue-500 text-white font-bold px-6 py-3 rounded-2xl text-sm">
+                    Continue with Open Request
+                  </button>
+                  <button onClick={goBack} className="bg-blue-50 text-blue-600 font-bold px-6 py-3 rounded-2xl text-sm">
+                    Try a Different Category
+                  </button>
+                </div>
               </div>
             ) : (
               <>
-                <p className="text-xs text-gray-400 mb-1">{matchingProviders.length} provider{matchingProviders.length !== 1 ? "s" : ""} found nearby</p>
+                <p className="text-xs text-gray-400 mb-1">{matchingProviders.length} helper{matchingProviders.length !== 1 ? "s" : ""} found nearby</p>
                 <div className="space-y-3">
                   {matchingProviders.map((p) => (
                     <ProviderRow key={p.id} provider={p} selected={form.providerId === p.id}
@@ -253,8 +300,10 @@ export const Request = () => {
                   ))}
                 </div>
                 <button onClick={goNext} className="w-full py-4 rounded-2xl text-sm font-black bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98] transition-all">
-                  Choose a Provider →
+                  Choose a Helper →
                 </button>
+              </>
+            )}
               </>
             )}
           </>
@@ -263,12 +312,23 @@ export const Request = () => {
         {/* Step 3: Choose Provider */}
         {step === 3 && (
           <>
-            <p className="text-sm text-gray-500">Select the provider you'd like to book with.</p>
+            {form.openToAnyHelper ? (
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+                <p className="text-3xl mb-2">✅</p>
+                <h3 className="font-black text-gray-800 mb-1">No helper selection needed</h3>
+                <p className="text-sm text-gray-500 mb-4">Your request will be visible to all nearby helpers.</p>
+                <button onClick={() => setStep(4)} className="w-full bg-blue-500 text-white font-bold px-6 py-3 rounded-2xl text-sm">
+                  Continue to Details
+                </button>
+              </div>
+            ) : (
+              <>
+            <p className="text-sm text-gray-500">Select the helper you would like to contact.</p>
             {matchingProviders.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center">
                 <p className="text-4xl mb-3">🔍</p>
-                <h3 className="font-black text-gray-800 mb-2">No Services Available</h3>
-                <p className="text-sm text-gray-500 mb-4">There are currently no {selectedCategory?.name.toLowerCase()} providers in your area.</p>
+                <h3 className="font-black text-gray-800 mb-2">No Helpers Available</h3>
+                <p className="text-sm text-gray-500 mb-4">There are currently no {selectedCategory?.name.toLowerCase()} helpers in your area.</p>
                 <button onClick={() => setStep(1)} className="bg-blue-50 text-blue-600 font-bold px-6 py-3 rounded-2xl text-sm">Start Over</button>
               </div>
             ) : (
@@ -281,8 +341,10 @@ export const Request = () => {
                 </div>
                 <button onClick={() => step3Valid && goNext()} disabled={!step3Valid}
                   className={`w-full py-4 rounded-2xl text-sm font-black transition-all ${step3Valid ? "bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98]" : "bg-gray-100 text-gray-400"}`}>
-                  {step3Valid ? "Confirm Provider →" : "Select a Provider to Continue"}
+                  {step3Valid ? "Confirm Helper →" : "Select a Helper to Continue"}
                 </button>
+              </>
+            )}
               </>
             )}
           </>
@@ -291,7 +353,7 @@ export const Request = () => {
         {/* Step 4: Service Details */}
         {step === 4 && (
           <>
-            {selectedProvider && (
+            {selectedProvider && !form.openToAnyHelper && (
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-3">
                 <img src={selectedProvider.imageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedProvider.businessName || selectedProvider.name)}&background=6366f1&color=fff`}
                   alt={selectedProvider.name} className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
@@ -303,9 +365,14 @@ export const Request = () => {
                 <button onClick={() => setStep(3)} className="text-xs text-blue-500 font-semibold flex-shrink-0">Change</button>
               </div>
             )}
+            {form.openToAnyHelper && (
+              <div className="bg-emerald-50 rounded-2xl p-3 border border-emerald-100">
+                <p className="text-xs font-bold text-emerald-700">Open request: nearby helpers can claim this after you submit.</p>
+              </div>
+            )}
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <h3 className="text-sm font-black text-gray-900 mb-1">Service address <span className="text-red-400">*</span></h3>
-              <p className="text-xs text-gray-400 mb-3">Where should the professional visit?</p>
+              <p className="text-xs text-gray-400 mb-3">Where should the helper come?</p>
               <div className="relative">
                 <input value={form.address}
                   onChange={(e) => { handleChange("address", e.target.value); fetchAddressSuggestions(e.target.value); setShowSuggestions(true); }}
@@ -352,9 +419,9 @@ export const Request = () => {
                 <ReviewRow label="Description" value={form.description} onEdit={() => setStep(1)} />
                 <ReviewRow label="Urgency" value={form.urgency === "urgent" ? "🚨 ASAP" : "📅 Scheduled"} onEdit={() => setStep(1)} />
                 {form.scheduledDate && <ReviewRow label="Date" value={new Date(form.scheduledDate + "T00:00:00").toLocaleDateString()} onEdit={() => setStep(4)} />}
-                <ReviewRow label="Provider" value={selectedProvider ? (selectedProvider.businessName || selectedProvider.name) : "—"} onEdit={() => setStep(3)} />
+                <ReviewRow label="Helper" value={form.openToAnyHelper ? "Any nearby helper" : selectedProvider ? (selectedProvider.businessName || selectedProvider.name) : "Any nearby helper"} onEdit={() => setStep(form.openToAnyHelper ? 2 : selectedProvider ? 3 : 2)} />
                 <ReviewRow label="Address" value={form.address} onEdit={() => setStep(4)} />
-                {selectedProvider && <ReviewRow label="Inspection Fee" value={formatCurrency(selectedProvider.inspectionFee)} />}
+                {selectedProvider && <ReviewRow label="Visit Fee" value={formatCurrency(selectedProvider.inspectionFee)} />}
               </div>
             </div>
             {!user && (
@@ -364,7 +431,7 @@ export const Request = () => {
               </div>
             )}
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-              <p className="text-xs text-gray-500 leading-relaxed">By submitting you agree that the provider will contact you to schedule a visit. Payment is only due after job completion.</p>
+              <p className="text-xs text-gray-500 leading-relaxed">By submitting you agree that nearby helpers can contact you about this task. Payment should only happen after work is complete.</p>
             </div>
             <button onClick={handleSubmit} disabled={loading || !user}
               className={`w-full py-4 rounded-2xl text-sm font-black transition-all ${!loading && user ? "bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98]" : "bg-gray-100 text-gray-400"}`}>

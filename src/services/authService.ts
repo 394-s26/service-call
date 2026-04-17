@@ -4,8 +4,54 @@ import {
   onAuthStateChanged,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { auth, googleProvider } from "./firebase";
+import { auth, googleProvider, isFirebaseConfigured } from "./firebase";
 import type { User } from "../types";
+
+const LOCAL_USER_KEY = "servicecall_local_user";
+const LOCAL_ACCOUNTS_KEY = "servicecall_local_accounts";
+
+type LocalAccount = {
+  uid: string;
+  name: string;
+  email: string;
+  password: string;
+};
+
+const readLocalUser = (): User | null => {
+  try {
+    const raw = localStorage.getItem(LOCAL_USER_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeLocalUser = (user: User | null) => {
+  try {
+    if (!user) localStorage.removeItem(LOCAL_USER_KEY);
+    else localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(user));
+    window.dispatchEvent(new Event("servicecall-auth-changed"));
+  } catch {
+    // ignore localStorage failures in restricted environments
+  }
+};
+
+const readLocalAccounts = (): LocalAccount[] => {
+  try {
+    const raw = localStorage.getItem(LOCAL_ACCOUNTS_KEY);
+    return raw ? (JSON.parse(raw) as LocalAccount[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeLocalAccounts = (accounts: LocalAccount[]) => {
+  try {
+    localStorage.setItem(LOCAL_ACCOUNTS_KEY, JSON.stringify(accounts));
+  } catch {
+    // ignore localStorage failures in restricted environments
+  }
+};
 
 export const mapFirebaseUser = (firebaseUser: FirebaseUser): User => ({
   uid: firebaseUser.uid,
@@ -15,6 +61,16 @@ export const mapFirebaseUser = (firebaseUser: FirebaseUser): User => ({
 });
 
 export const signInWithGoogle = async (): Promise<User> => {
+  if (!isFirebaseConfigured) {
+    const localGoogleUser: User = {
+      uid: "local-google-user",
+      displayName: "Local User",
+      email: "local.user@example.com",
+      photoURL: null,
+    };
+    writeLocalUser(localGoogleUser);
+    return localGoogleUser;
+  }
   try {
     const result = await signInWithPopup(auth, googleProvider);
     return mapFirebaseUser(result.user);
@@ -24,6 +80,10 @@ export const signInWithGoogle = async (): Promise<User> => {
 };
 
 export const signOut = async (): Promise<void> => {
+  if (!isFirebaseConfigured) {
+    writeLocalUser(null);
+    return;
+  }
   try {
     await firebaseSignOut(auth);
   } catch (error) {
@@ -31,7 +91,65 @@ export const signOut = async (): Promise<void> => {
   }
 };
 
+export const signUpWithEmail = async (name: string, email: string, password: string): Promise<User> => {
+  if (isFirebaseConfigured) {
+    throw new Error("Email/password auth is not enabled in this build.");
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const existing = readLocalAccounts();
+  if (existing.some((a) => a.email === normalizedEmail)) {
+    throw new Error("An account already exists with that email.");
+  }
+  const newAccount: LocalAccount = {
+    uid: `local-${Date.now()}`,
+    name: name.trim() || "User",
+    email: normalizedEmail,
+    password,
+  };
+  writeLocalAccounts([newAccount, ...existing]);
+  const user: User = {
+    uid: newAccount.uid,
+    displayName: newAccount.name,
+    email: newAccount.email,
+    photoURL: null,
+  };
+  writeLocalUser(user);
+  return user;
+};
+
+export const signInWithEmail = async (email: string, password: string): Promise<User> => {
+  if (isFirebaseConfigured) {
+    throw new Error("Email/password auth is not enabled in this build.");
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const account = readLocalAccounts().find((a) => a.email === normalizedEmail);
+  if (!account || account.password !== password) {
+    throw new Error("Invalid email or password.");
+  }
+  const user: User = {
+    uid: account.uid,
+    displayName: account.name,
+    email: account.email,
+    photoURL: null,
+  };
+  writeLocalUser(user);
+  return user;
+};
+
 export const onAuthChange = (callback: (user: User | null) => void) => {
+  if (!isFirebaseConfigured) {
+    callback(readLocalUser());
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === LOCAL_USER_KEY) callback(readLocalUser());
+    };
+    const onLocalAuthChange = () => callback(readLocalUser());
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("servicecall-auth-changed", onLocalAuthChange);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("servicecall-auth-changed", onLocalAuthChange);
+    };
+  }
   return onAuthStateChanged(auth, (firebaseUser) => {
     callback(firebaseUser ? mapFirebaseUser(firebaseUser) : null);
   });

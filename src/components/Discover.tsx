@@ -6,8 +6,10 @@ import { MOCK_CATEGORIES } from "../utilities/mockData";
 import { useAppContext } from "../hooks/useAppContext";
 import { useAuth } from "../hooks/useAuth";
 import type { ServiceProvider } from "../types";
+import { NearbyMap } from "./NearbyMap";
+import "leaflet/dist/leaflet.css";
 
-const SORT_OPTIONS = ["Top Rated", "Nearest", "Lowest Fee", "Available Now"] as const;
+const SORT_OPTIONS = ["Top Rated", "Nearest", "Lowest Visit Fee", "Available Now"] as const;
 type SortOption = (typeof SORT_OPTIONS)[number];
 
 const calcDist = (p: ServiceProvider, userLat: number, userLng: number) => {
@@ -50,7 +52,7 @@ export const Discover = () => {
     switch (sortBy) {
       case "Nearest": return calcDist(a, userLat, userLng) - calcDist(b, userLat, userLng);
       case "Top Rated": return b.rating - a.rating;
-      case "Lowest Fee": return a.inspectionFee - b.inspectionFee;
+      case "Lowest Visit Fee": return a.inspectionFee - b.inspectionFee;
       case "Available Now": return (b.available ? 1 : 0) - (a.available ? 1 : 0);
       default: return 0;
     }
@@ -60,11 +62,20 @@ export const Discover = () => {
     <div className="page-scroll">
       {/* Sticky Header */}
       <div className="bg-white px-4 safe-top pb-3 sticky top-0 z-40 shadow-sm">
-        <h1 className="text-xl font-black text-gray-900 mb-3">Explore</h1>
-        <SearchBar onSearch={setSearchQuery} placeholder="Search services, businesses…" />
+        <h1 className="text-xl font-black text-gray-900 mb-3">Find Nearby Helpers</h1>
+        <SearchBar onSearch={setSearchQuery} placeholder="Search fixes, tasks, or helpers..." />
       </div>
 
       <div className="px-4 pt-3 space-y-3">
+        {/* Map */}
+        <NearbyMap
+          providers={sorted}
+          userLat={userLat}
+          userLng={userLng}
+          showUserLocation={showDistance}
+          onProviderClick={handleProviderClick}
+        />
+
         {/* Categories */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
           <button
@@ -118,7 +129,7 @@ export const Discover = () => {
         {/* Results count */}
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-gray-400">
-            {sorted.length} {sorted.length === 1 ? "business" : "businesses"} found
+            {sorted.length} {sorted.length === 1 ? "helper" : "helpers"} found
           </p>
           {!showDistance && (
             <button
@@ -136,14 +147,14 @@ export const Discover = () => {
             <p className="text-4xl mb-3">🔍</p>
             <h3 className="font-bold text-gray-700 mb-1">No results found</h3>
             <p className="text-sm text-gray-400">
-              {providers.length === 0 ? "No businesses listed yet." : "Try adjusting your search or filters."}
+              {providers.length === 0 ? "No helpers listed yet." : "Try adjusting your search or filters."}
             </p>
             {providers.length === 0 && (
               <button
-                onClick={() => navigate("/business")}
+                onClick={() => navigate("/request")}
                 className="mt-4 bg-violet-600 text-white font-bold px-5 py-2.5 rounded-xl text-sm"
               >
-                List Your Business
+                Post a Request Instead
               </button>
             )}
           </div>

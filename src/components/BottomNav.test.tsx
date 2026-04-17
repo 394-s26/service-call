@@ -14,8 +14,8 @@ describe("BottomNav", () => {
   it("renders all nav labels", () => {
     renderWithRouter();
     expect(screen.getByText("Home")).toBeInTheDocument();
-    expect(screen.getByText("Discover")).toBeInTheDocument();
-    expect(screen.getByText("Bookmark")).toBeInTheDocument();
+    expect(screen.getByText("Explore")).toBeInTheDocument();
+    expect(screen.getByText("Messages")).toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
   });
 
@@ -28,13 +28,13 @@ describe("BottomNav", () => {
   it("marks Home link as active on root path", () => {
     renderWithRouter("/");
     const homeLink = screen.getByText("Home").closest("a");
-    expect(homeLink).toHaveClass("text-blue-500");
+    expect(homeLink).toHaveClass("text-blue-600");
   });
 
-  it("marks Discover link as active on /discover path", () => {
+  it("marks Explore link as active on /discover path", () => {
     renderWithRouter("/discover");
-    const discoverLink = screen.getByText("Discover").closest("a");
-    expect(discoverLink).toHaveClass("text-blue-500");
+    const exploreLink = screen.getByText("Explore").closest("a");
+    expect(exploreLink).toHaveClass("text-blue-600");
   });
 
   it("center request button links to /request", () => {

@@ -52,7 +52,7 @@ export const ProviderDetail = () => {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center px-6">
           <p className="text-4xl mb-3">🔍</p>
-          <p className="font-bold text-gray-700 mb-1">Business not found</p>
+          <p className="font-bold text-gray-700 mb-1">Helper not found</p>
           <p className="text-sm text-gray-400 mb-4">This listing may have been removed.</p>
           <button
             onClick={() => navigate(-1)}
@@ -248,10 +248,10 @@ export const ProviderDetail = () => {
           <h3 className="text-sm font-black text-gray-900 mb-3">How It Works</h3>
           <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-4 space-y-3">
             {[
-              { icon: "💳", text: `Pay ${formatCurrency(provider.inspectionFee)} inspection fee to book` },
-              { icon: "📍", text: "Pro visits your location to assess the job" },
-              { icon: "💬", text: "Receive a custom quote for the full work" },
-              { icon: "✅", text: "Accept quote & pay only on completion" },
+              { icon: "📝", text: "Post your task with details and location" },
+              { icon: "💬", text: "Message to confirm timing and expectations" },
+              { icon: "🤝", text: "Agree on a fair price before starting" },
+              { icon: "✅", text: "Mark complete and pay after the work is done" },
             ].map(({ icon, text }) => (
               <div key={text} className="flex items-center gap-3">
                 <div className="w-7 h-7 rounded-full bg-white shadow-sm flex items-center justify-center flex-shrink-0">
@@ -350,7 +350,7 @@ export const ProviderDetail = () => {
               <textarea
                 value={reviewComment}
                 onChange={(e) => { setReviewComment(e.target.value); setReviewError(""); }}
-                placeholder="Share your experience with this business..."
+                placeholder="Share your experience with this helper..."
                 rows={3}
                 className="w-full bg-white rounded-xl px-3 py-2.5 text-sm text-gray-700 border border-gray-200 focus:border-blue-300 focus:bg-white transition-colors resize-none"
               />
@@ -433,7 +433,7 @@ export const ProviderDetail = () => {
       <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 safe-bottom">
         {!user ? (
           <div className="space-y-2">
-            <p className="text-xs text-gray-400 text-center">Sign in to book or message this business</p>
+            <p className="text-xs text-gray-400 text-center">Sign in to request or message this helper</p>
             <button
               onClick={() => navigate("/account")}
               className="w-full bg-blue-500 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform"

@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../hooks/useAppContext";
 import { useAuth } from "../hooks/useAuth";
 import { signInWithGoogle } from "../services/authService";
 import { MOCK_CATEGORIES, formatCurrency, getStatusColor, getStatusLabel } from "../utilities/mockData";
+import { getHelperAdvanceAction, getHelperWaitingMessage } from "../utilities/jobFlow";
 import type { ServiceProvider } from "../types";
 
 const GOOGLE_MAPS_API = import.meta.env.VITE_GOOGLE_MAPS_API;
@@ -47,18 +48,6 @@ const isValidWebsite = (url: string): boolean => {
   return /^(https?:\/\/)?([\w-]+\.)+[\w-]{2,}(\/\S*)?$/.test(url.trim());
 };
 
-// Simple localStorage-backed persistence helpers
-const STORAGE_KEY = "servicecall_providers";
-const loadPersistedProviders = (): ServiceProvider[] => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
-};
-const persistProviders = (providers: ServiceProvider[]) => {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(providers)); } catch { /* ignore */ }
-};
-
 export const BusinessDashboard = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
@@ -70,6 +59,7 @@ export const BusinessDashboard = () => {
   const [saved, setSaved] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [quoteForms, setQuoteForms] = useState<Record<string, string>>({});
   const [locationSuggestions, setLocationSuggestions] = useState<{ description: string; place_id: string }[]>([]);
@@ -78,22 +68,9 @@ export const BusinessDashboard = () => {
   const formRef = useRef<HTMLDivElement>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load persisted providers on mount (for the current user)
-  useEffect(() => {
-    if (!user) return;
-    const persisted = loadPersistedProviders().filter(p => p.ownerUid === user.uid);
-    persisted.forEach(p => {
-      if (!providers.find(existing => existing.id === p.id)) addProvider(p);
-    });
-  }, [user?.uid]);
-
-  // Persist providers whenever they change
-  useEffect(() => {
-    if (providers.length > 0) persistProviders(providers);
-  }, [providers]);
-
   const myListings = providers.filter((p) => p.ownerUid === user?.uid);
   const myRequests = requests.filter((r) => myListings.some((l) => l.id === r.providerId));
+  const openRequests = requests.filter((r) => r.providerId === "unassigned" && r.status === "pending");
 
   const handleSignIn = async () => {
     setSigningIn(true);
@@ -120,7 +97,7 @@ export const BusinessDashboard = () => {
     handleChange("phone", formatPhone(value));
   };
 
-  const resetForm = () => { setForm(EMPTY_FORM); setEditingId(null); setSaved(false); setFormErrors({}); setLocationSuggestions([]); };
+  const resetForm = () => { setForm(EMPTY_FORM); setEditingId(null); setSaved(false); setFormErrors({}); setLocationSuggestions([]); setShowAdvanced(false); };
 
   const handleEdit = (p: ServiceProvider) => {
     setForm({
@@ -145,9 +122,6 @@ export const BusinessDashboard = () => {
   const handleDelete = (id: string) => {
     removeProvider(id);
     setConfirmDelete(null);
-    // Remove from localStorage too
-    const persisted = loadPersistedProviders().filter(p => p.id !== id);
-    persistProviders(persisted);
   };
 
   // Google Maps location autocomplete
@@ -322,10 +296,18 @@ export const BusinessDashboard = () => {
     setTimeout(() => { setSaved(false); setTab("listings"); resetForm(); }, 2000);
   };
 
-  const handleAcceptRequest = (reqId: string) => {
-    updateRequest(reqId, { status: "accepted", updatedAt: new Date() });
-    const req = requests.find(r => r.id === reqId);
-    if (req) addNotification({ userId: req.userId, title: "Request Accepted!", body: "Your service request has been accepted by the business.", read: false, requestId: reqId });
+  const notifyCustomerAboutJob = (customerUserId: string, title: string, body: string, requestId: string) => {
+    addNotification({ userId: customerUserId, title, body, read: false, requestId });
+  };
+
+  /** Advance job stage and ping the customer (same pattern as delivery status updates). */
+  const handleAdvanceJob = (reqId: string) => {
+    const req = requests.find((r) => r.id === reqId);
+    if (!req) return;
+    const action = getHelperAdvanceAction(req);
+    if (!action) return;
+    updateRequest(reqId, { status: action.nextStatus, updatedAt: new Date() });
+    notifyCustomerAboutJob(req.userId, action.customerTitle, action.customerBody, reqId);
   };
 
   const handleSendQuote = (reqId: string) => {
@@ -335,6 +317,30 @@ export const BusinessDashboard = () => {
     const req = requests.find(r => r.id === reqId);
     if (req) addNotification({ userId: req.userId, title: "Quote Received!", body: `You've received a quote of ${formatCurrency(amount)} for your service request.`, read: false, requestId: reqId });
     setQuoteForms(prev => { const n = { ...prev }; delete n[reqId]; return n; });
+  };
+
+  const handleClaimOpenRequest = (reqId: string) => {
+    if (myListings.length === 0) {
+      setTab("create");
+      return;
+    }
+    const activeListing = myListings.find((l) => l.available) ?? myListings[0];
+    updateRequest(reqId, {
+      providerId: activeListing.id,
+      status: "accepted",
+      updatedAt: new Date(),
+      inspectionFee: activeListing.inspectionFee,
+    });
+    const req = requests.find((r) => r.id === reqId);
+    if (req) {
+      addNotification({
+        userId: req.userId,
+        title: "A helper accepted your request",
+        body: `${activeListing.businessName || activeListing.name} is ready to help.`,
+        read: false,
+        requestId: reqId,
+      });
+    }
   };
 
   // ── Auth Gate ─────────────────────────────────────────────────────────────
@@ -352,8 +358,8 @@ export const BusinessDashboard = () => {
         <div className="w-20 h-20 rounded-3xl bg-violet-50 flex items-center justify-center mb-5">
           <span className="text-4xl">🏢</span>
         </div>
-        <h2 className="text-2xl font-black text-gray-900 mb-2">Business Dashboard</h2>
-        <p className="text-sm text-gray-500 mb-8 max-w-xs">Sign in to create and manage your service listings, track job requests, and grow your business.</p>
+        <h2 className="text-2xl font-black text-gray-900 mb-2">Helper Dashboard</h2>
+        <p className="text-sm text-gray-500 mb-8 max-w-xs">Sign in to offer help, claim requests, and message customers.</p>
         <button onClick={handleSignIn} disabled={signingIn}
           className="w-full max-w-xs bg-violet-600 text-white font-black py-4 rounded-2xl text-sm shadow-lg shadow-violet-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
           {signingIn ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Signing in…</> : "Sign in with Google"}
@@ -373,7 +379,7 @@ export const BusinessDashboard = () => {
             </svg>
           </button>
           <div className="flex-1">
-            <h1 className="text-lg font-black text-gray-900">Business Dashboard</h1>
+            <h1 className="text-lg font-black text-gray-900">Helper Dashboard</h1>
             <p className="text-xs text-gray-400 truncate">{user.email}</p>
           </div>
         </div>
@@ -382,7 +388,7 @@ export const BusinessDashboard = () => {
           {(["listings", "create", "requests"] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-3 text-xs font-bold capitalize transition-colors ${tab === t ? "text-violet-600 border-b-2 border-violet-500" : "text-gray-400"}`}>
-              {t === "listings" ? `My Listings (${myListings.length})` : t === "requests" ? `Requests (${myRequests.length})` : editingId ? "Edit Listing" : "Create Listing"}
+              {t === "listings" ? `My Profile (${myListings.length})` : t === "requests" ? `Requests (${myRequests.length + openRequests.length})` : editingId ? "Edit Profile" : "Offer Help"}
             </button>
           ))}
         </div>
@@ -394,9 +400,9 @@ export const BusinessDashboard = () => {
           {myListings.length === 0 ? (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">🏪</p>
-              <h3 className="font-bold text-gray-700 mb-1">No listings yet</h3>
-              <p className="text-sm text-gray-400 mb-4">Create your first service listing to start getting customers.</p>
-              <button onClick={() => setTab("create")} className="bg-violet-600 text-white font-bold px-6 py-3 rounded-2xl text-sm">Create Listing</button>
+              <h3 className="font-bold text-gray-700 mb-1">No helper profile yet</h3>
+              <p className="text-sm text-gray-400 mb-4">Create your profile once so customers can find you.</p>
+              <button onClick={() => setTab("create")} className="bg-violet-600 text-white font-bold px-6 py-3 rounded-2xl text-sm">Create Helper Profile</button>
             </div>
           ) : (
             myListings.map((p) => {
@@ -461,26 +467,11 @@ export const BusinessDashboard = () => {
             </div>
           )}
 
-          {/* Provider type */}
+          {/* Helper name */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-2">Account Type</label>
-            <div className="grid grid-cols-2 gap-2">
-              {([ ["individual", "👤", "Individual Pro", "Just me, working solo"], ["business", "🏢", "Business", "I have a team of employees"] ] as const).map(([val, icon, label, desc]) => (
-                <button key={val} onClick={() => handleChange("providerType", val)}
-                  className={`flex flex-col items-start gap-1 px-3 py-3 rounded-xl text-left transition-all ${form.providerType === val ? "bg-violet-50 border-2 border-violet-400" : "bg-gray-50 border-2 border-transparent"}`}>
-                  <span className="text-lg">{icon}</span>
-                  <span className={`text-xs font-bold ${form.providerType === val ? "text-violet-700" : "text-gray-700"}`}>{label}</span>
-                  <span className="text-[10px] text-gray-400">{desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Business name */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">Business Name <span className="text-red-400">*</span></label>
+            <label className="text-xs font-bold text-gray-500 block mb-1.5">Display Name <span className="text-red-400">*</span></label>
             <input value={form.businessName} onChange={(e) => handleChange("businessName", e.target.value)}
-              placeholder="e.g. Joe's Plumbing Services"
+              placeholder="e.g. Nahiyan - Plumbing Help"
               className={`w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border focus:bg-white transition-colors ${formErrors.businessName ? "border-red-300 bg-red-50" : "border-gray-100 focus:border-violet-300"}`} />
             {formErrors.businessName && <p className="text-xs text-red-500 mt-1">{formErrors.businessName}</p>}
           </div>
@@ -507,17 +498,9 @@ export const BusinessDashboard = () => {
             )}
           </div>
 
-          {/* Description */}
+          {/* Visit Fee */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">Description</label>
-            <textarea value={form.description} onChange={(e) => handleChange("description", e.target.value)}
-              placeholder="Tell customers about your experience, certifications, and what makes you stand out…"
-              rows={3} className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors resize-none" />
-          </div>
-
-          {/* Inspection Fee */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">Inspection Fee ($) <span className="text-red-400">*</span></label>
+            <label className="text-xs font-bold text-gray-500 block mb-1.5">Visit Fee ($) <span className="text-red-400">*</span></label>
             <input type="number" value={form.inspectionFee}
               onChange={(e) => { const v = e.target.value; if (v === "" || /^\d*\.?\d*$/.test(v)) handleChange("inspectionFee", v); }}
               placeholder="e.g. 50" min="0" step="any"
@@ -525,7 +508,7 @@ export const BusinessDashboard = () => {
             {formErrors.inspectionFee ? (
               <p className="text-xs text-red-500 mt-1">{formErrors.inspectionFee}</p>
             ) : (
-              <p className="text-xs text-gray-400 mt-1">Fee charged to visit a customer's location to assess the job.</p>
+              <p className="text-xs text-gray-400 mt-1">Optional upfront fee before a full quote.</p>
             )}
           </div>
 
@@ -537,14 +520,46 @@ export const BusinessDashboard = () => {
               className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors" />
           </div>
 
-          {/* Website */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">Website <span className="text-gray-400 font-normal">(optional)</span></label>
-            <input value={form.website} onChange={(e) => handleChange("website", e.target.value)}
-              placeholder="https://yourbusiness.com" type="url"
-              className={`w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border focus:bg-white transition-colors ${formErrors.website ? "border-red-300 bg-red-50" : "border-gray-100 focus:border-violet-300"}`} />
-            {formErrors.website && <p className="text-xs text-red-500 mt-1">{formErrors.website}</p>}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((prev) => !prev)}
+            className="w-full text-sm font-semibold text-violet-600 bg-violet-50 rounded-xl py-2.5"
+          >
+            {showAdvanced ? "Hide optional fields" : "Show optional fields"}
+          </button>
+
+          {showAdvanced && (
+            <>
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <label className="text-xs font-bold text-gray-500 block mb-1.5">Short bio</label>
+                <textarea value={form.description} onChange={(e) => handleChange("description", e.target.value)}
+                  placeholder="Tell customers what you can help with..."
+                  rows={3} className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors resize-none" />
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <label className="text-xs font-bold text-gray-500 block mb-1.5">Website <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input value={form.website} onChange={(e) => handleChange("website", e.target.value)}
+                  placeholder="https://yourbusiness.com" type="url"
+                  className={`w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border focus:bg-white transition-colors ${formErrors.website ? "border-red-300 bg-red-50" : "border-gray-100 focus:border-violet-300"}`} />
+                {formErrors.website && <p className="text-xs text-red-500 mt-1">{formErrors.website}</p>}
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <label className="text-xs font-bold text-gray-500 block mb-1.5">Specialties <span className="text-gray-400 font-normal">(comma separated)</span></label>
+                <input value={form.specialties} onChange={(e) => handleChange("specialties", e.target.value)}
+                  placeholder="e.g. Leak repair, faucet replacement"
+                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors" />
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <label className="text-xs font-bold text-gray-500 block mb-1.5">Profile Image URL <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input value={form.imageUrl} onChange={(e) => handleChange("imageUrl", e.target.value)}
+                  placeholder="https://…"
+                  className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors" />
+              </div>
+            </>
+          )}
 
           {/* Location with type selector + Google Maps autocomplete */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -607,22 +622,6 @@ export const BusinessDashboard = () => {
             {!GOOGLE_MAPS_API && <p className="text-xs text-amber-500 mt-1">⚠ Add VITE_GOOGLE_MAPS_API for autocomplete.</p>}
           </div>
 
-          {/* Specialties */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">Specialties <span className="text-gray-400 font-normal">(comma separated)</span></label>
-            <input value={form.specialties} onChange={(e) => handleChange("specialties", e.target.value)}
-              placeholder="e.g. Leak Repair, Pipe Installation, Water Heaters"
-              className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors" />
-          </div>
-
-          {/* Profile Image URL */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <label className="text-xs font-bold text-gray-500 block mb-1.5">Profile Image URL <span className="text-gray-400 font-normal">(optional)</span></label>
-            <input value={form.imageUrl} onChange={(e) => handleChange("imageUrl", e.target.value)}
-              placeholder="https://…"
-              className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-violet-300 focus:bg-white transition-colors" />
-          </div>
-
           {/* Available toggle */}
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
             <div>
@@ -651,7 +650,7 @@ export const BusinessDashboard = () => {
             </button>
             <button onClick={handleSubmit}
               className="flex-1 py-3.5 rounded-2xl text-sm font-black bg-violet-600 text-white shadow-lg shadow-violet-200 active:scale-[0.98] transition-all">
-              {editingId ? "Save Changes" : "Publish Listing"}
+              {editingId ? "Save Changes" : "Go Live"}
             </button>
           </div>
         </div>
@@ -660,11 +659,45 @@ export const BusinessDashboard = () => {
       {/* Requests Tab */}
       {tab === "requests" && (
         <div className="px-4 pt-4 space-y-3">
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-3">
+            <p className="text-xs font-bold text-blue-800">How jobs move</p>
+            <p className="text-xs text-blue-700 mt-1">
+              Posted → you accept → On the way → Working → You mark finished → Customer confirms done. Each step notifies them automatically.
+            </p>
+          </div>
+
+          {openRequests.length > 0 && (
+            <>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Open Requests ({openRequests.length})</p>
+              {openRequests.map((req) => (
+                <div key={req.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-gray-400 capitalize mb-0.5">{req.categoryId}</p>
+                      <p className="text-sm font-bold text-gray-900 line-clamp-2">{req.description}</p>
+                    </div>
+                    <span className="ml-2 px-2.5 py-1 rounded-full text-[10px] font-bold flex-shrink-0 bg-amber-100 text-amber-700">
+                      OPEN
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mb-3">📍 {req.address}</p>
+                  <button
+                    onClick={() => handleClaimOpenRequest(req.id)}
+                    className="w-full bg-violet-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm active:scale-[0.98] transition-transform"
+                  >
+                    ✅ Claim & Accept Request
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">My Assigned Requests ({myRequests.length})</p>
           {myRequests.length === 0 ? (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">📭</p>
-              <h3 className="font-bold text-gray-700 mb-1">No job requests yet</h3>
-              <p className="text-sm text-gray-400">New requests from customers will appear here.</p>
+              <h3 className="font-bold text-gray-700 mb-1">No assigned requests yet</h3>
+              <p className="text-sm text-gray-400">Claim an open request above, or wait for direct requests.</p>
               {myListings.length === 0 && (
                 <button onClick={() => setTab("create")} className="mt-4 bg-violet-600 text-white font-bold px-6 py-3 rounded-2xl text-sm">Create a Listing First</button>
               )}
@@ -683,17 +716,15 @@ export const BusinessDashboard = () => {
                   </span>
                 </div>
                 <p className="text-xs text-gray-400 mb-2">📍 {req.address}</p>
-                {req.inspectionFee && <p className="text-xs text-gray-500 mb-2">Inspection fee: <strong>{formatCurrency(req.inspectionFee)}</strong></p>}
+                {req.inspectionFee && <p className="text-xs text-gray-500 mb-2">Visit fee: <strong>{formatCurrency(req.inspectionFee)}</strong></p>}
                 {req.quote && <p className="text-xs text-emerald-600 font-semibold mb-2">Quote sent: {formatCurrency(req.quote)}</p>}
-                {req.status === "pending" && (
-                  <button onClick={() => handleAcceptRequest(req.id)}
-                    className="w-full mt-1 bg-violet-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm active:scale-[0.98] transition-transform">
-                    ✅ Accept Request
-                  </button>
+                {getHelperWaitingMessage(req.status) && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-2">{getHelperWaitingMessage(req.status)}</p>
                 )}
                 {req.status === "accepted" && (
                   <div className="mt-2 bg-blue-50 rounded-xl p-3">
-                    <p className="text-xs font-bold text-blue-800 mb-2">Send a quote to the customer</p>
+                    <p className="text-xs font-bold text-blue-800 mb-1">Optional: send a price</p>
+                    <p className="text-[10px] text-blue-600 mb-2">Or skip and use “On my way” below if you already agreed verbally.</p>
                     <div className="flex gap-2">
                       <div className="relative flex-1">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
@@ -707,6 +738,15 @@ export const BusinessDashboard = () => {
                       </button>
                     </div>
                   </div>
+                )}
+                {getHelperAdvanceAction(req) && (
+                  <button
+                    type="button"
+                    onClick={() => handleAdvanceJob(req.id)}
+                    className="w-full mt-2 bg-violet-600 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm active:scale-[0.98] transition-transform"
+                  >
+                    {getHelperAdvanceAction(req)!.label} →
+                  </button>
                 )}
               </div>
             ))

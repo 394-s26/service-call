@@ -26,6 +26,6 @@ describe("CategoryPill", () => {
   it("applies selected styles when isSelected is true", () => {
     render(<CategoryPill category={mockCategory} isSelected={true} onClick={vi.fn()} />);
     const pill = screen.getByText("Plumbing").closest("button");
-    expect(pill).toHaveClass("scale-105");
+    expect(pill).toHaveClass("bg-blue-500");
   });
 });

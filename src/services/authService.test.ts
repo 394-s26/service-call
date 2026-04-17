@@ -4,6 +4,7 @@ import type { User as FirebaseUser } from "firebase/auth";
 vi.mock("./firebase", () => ({
   auth: {},
   googleProvider: {},
+  isFirebaseConfigured: true,
 }));
 
 vi.mock("firebase/auth", () => ({
