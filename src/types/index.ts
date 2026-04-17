@@ -59,6 +59,8 @@ export type ServiceRequestStatus =
   | "quote_provided"
   | "en_route"
   | "in_progress"
+  /** Helper marked work done; customer must confirm to close the job */
+  | "awaiting_customer"
   | "completed"
   | "cancelled";
 

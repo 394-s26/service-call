@@ -28,6 +28,9 @@ export const LocationModal = ({ onClose }: LocationModalProps) => {
   const [suggestions, setSuggestions] = useState<{ description: string; place_id: string }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -36,6 +39,8 @@ export const LocationModal = ({ onClose }: LocationModalProps) => {
 
   const handleClose = () => {
     setVisible(false);
+    setDragOffset(0);
+    setIsDragging(false);
     setTimeout(onClose, 280);
   };
 
@@ -100,6 +105,15 @@ export const LocationModal = ({ onClose }: LocationModalProps) => {
     if (!trimmed) { setInputError("Please enter a location."); return; }
     if (!isValidLocation(trimmed)) { setInputError("Please enter a valid city or address (e.g. Brooklyn, NY)."); return; }
     setLocation(trimmed);
+    // Without Google Maps API, best-effort geocoding via Nominatim to keep distance features useful.
+    if (!GOOGLE_MAPS_API) {
+      fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(trimmed)}&limit=1`)
+        .then((res) => res.json())
+        .then((data: Array<{ lat: string; lon: string }>) => {
+          if (data?.[0]) setUserCoords(Number(data[0].lat), Number(data[0].lon));
+        })
+        .catch(() => {});
+    }
     handleClose();
   };
 
@@ -163,17 +177,50 @@ export const LocationModal = ({ onClose }: LocationModalProps) => {
     );
   };
 
+  const handleDragStart = (clientY: number) => {
+    dragStartY.current = clientY;
+    setIsDragging(true);
+  };
+
+  const handleDragMove = (clientY: number) => {
+    if (dragStartY.current === null) return;
+    const delta = Math.max(0, clientY - dragStartY.current);
+    setDragOffset(delta);
+  };
+
+  const handleDragEnd = () => {
+    if (dragOffset > 120) {
+      handleClose();
+      return;
+    }
+    setDragOffset(0);
+    setIsDragging(false);
+    dragStartY.current = null;
+  };
+
   return (
     <>
       <div className={`sheet-overlay transition-opacity duration-200 ${visible ? "opacity-100" : "opacity-0"}`} onClick={handleClose} />
       <div
         className={`sheet-panel transition-transform duration-300 ${visible ? "translate-y-0" : "translate-y-full"}`}
-        style={{ transform: visible ? "translateX(-50%) translateY(0)" : "translateX(-50%) translateY(100%)" }}
+        style={{
+          transform: visible
+            ? `translateX(-50%) translateY(${dragOffset}px)`
+            : "translateX(-50%) translateY(100%)",
+          transitionDuration: isDragging ? "0ms" : "300ms",
+        }}
+        onTouchStart={(e) => handleDragStart(e.touches[0].clientY)}
+        onTouchMove={(e) => handleDragMove(e.touches[0].clientY)}
+        onTouchEnd={handleDragEnd}
+        onMouseDown={(e) => handleDragStart(e.clientY)}
+        onMouseMove={(e) => isDragging && handleDragMove(e.clientY)}
+        onMouseUp={handleDragEnd}
+        onMouseLeave={() => isDragging && handleDragEnd()}
       >
         <div className="px-5 pt-4 pb-8 safe-bottom">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5 cursor-grab active:cursor-grabbing" />
           <h2 className="text-lg font-bold text-gray-900 mb-1">📍 Your Location</h2>
-          <p className="text-sm text-gray-500 mb-5">Find nearby service professionals</p>
+          <p className="text-sm text-gray-500 mb-5">Find nearby helpers in your area</p>
 
           {/* GPS Button */}
           <button onClick={handleGeolocate} disabled={locating}
@@ -239,7 +286,7 @@ export const LocationModal = ({ onClose }: LocationModalProps) => {
           </div>
           {inputError && <p className="text-xs text-red-500 mb-3 px-1">{inputError}</p>}
           {!GOOGLE_MAPS_API && (
-            <p className="text-xs text-amber-500 mb-3 px-1">⚠ Add VITE_GOOGLE_MAPS_API for location autocomplete.</p>
+            <p className="text-xs text-amber-500 mb-3 px-1">Autocomplete is off (no Google Maps API), but GPS/manual location still works.</p>
           )}
 
           {/* Quick Cities */}

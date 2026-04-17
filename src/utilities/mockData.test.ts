@@ -28,8 +28,8 @@ describe("formatCurrency", () => {
 
 describe("getStatusLabel", () => {
   it("returns label for known status", () => {
-    expect(getStatusLabel("pending")).toBe("Pending");
-    expect(getStatusLabel("completed")).toBe("Completed");
+    expect(getStatusLabel("pending")).toBe("Posted");
+    expect(getStatusLabel("completed")).toBe("Done");
   });
   it("returns status as-is for unknown", () => {
     expect(getStatusLabel("unknown_status")).toBe("unknown_status");

@@ -11,6 +11,8 @@ import { useAppContext } from "../hooks/useAppContext";
 import { useAuth } from "../hooks/useAuth";
 import type { ServiceProvider } from "../types";
 
+const GOOGLE_MAPS_API = import.meta.env.VITE_GOOGLE_MAPS_API;
+
 const calcDist = (lat: number | undefined, lng: number | undefined, userLat: number, userLng: number) => {
   if (!lat || !lng) return null;
   const dLat = ((lat - userLat) * Math.PI) / 180;
@@ -131,9 +133,15 @@ export const Home = () => {
       </div>
 
       <div className="px-4 pt-4 space-y-6">
+        {!GOOGLE_MAPS_API && (
+          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-3">
+            <p className="text-xs font-bold text-amber-700">Location autocomplete is off.</p>
+            <p className="text-xs text-amber-600 mt-1">Add `VITE_GOOGLE_MAPS_API` in `.env.local` and restart `npm run dev` for full maps search.</p>
+          </div>
+        )}
         <PromoBanner />
 
-        {/* Role CTAs */}
+        {/* Primary CTAs */}
         <div className="grid grid-cols-2 gap-3">
           {/* Customer CTA */}
           <button
@@ -143,20 +151,19 @@ export const Home = () => {
             <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center mb-3">
               <span className="text-lg">🛠️</span>
             </div>
-            <p className="text-white font-bold text-sm leading-tight">Need a Service?</p>
-            <p className="text-blue-100 text-xs mt-0.5">Book in minutes</p>
+            <p className="text-white font-bold text-sm leading-tight">Need help at home?</p>
+            <p className="text-blue-100 text-xs mt-0.5">Post a request nearby</p>
           </button>
 
-          {/* Business CTA */}
           <button
-            onClick={() => navigate("/business")}
+            onClick={() => navigate("/discover")}
             className="card-press bg-gradient-to-br from-violet-500 to-purple-600 rounded-2xl p-4 text-left shadow-lg shadow-purple-200/60"
           >
             <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center mb-3">
-              <span className="text-lg">🏢</span>
+              <span className="text-lg">🤝</span>
             </div>
-            <p className="text-white font-bold text-sm leading-tight">Own a Business?</p>
-            <p className="text-purple-100 text-xs mt-0.5">List & get hired</p>
+            <p className="text-white font-bold text-sm leading-tight">Want to help?</p>
+            <p className="text-purple-100 text-xs mt-0.5">Find requests near you</p>
           </button>
         </div>
 
@@ -179,22 +186,22 @@ export const Home = () => {
           </div>
         </section>
 
-        {/* Top Rated */}
+        {/* Top Helpers */}
         <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-base font-bold text-gray-900">Top Rated</h2>
+            <h2 className="text-base font-bold text-gray-900">Top Helpers</h2>
             <button onClick={() => navigate("/discover")} className="text-xs font-semibold text-blue-500">See All</button>
           </div>
           {popularProviders.length === 0 ? (
             <div className="text-center py-10 bg-white rounded-2xl border border-gray-100">
               <p className="text-3xl mb-2">🔍</p>
-              <p className="text-sm font-semibold text-gray-500">No businesses listed yet</p>
-              <p className="text-xs text-gray-400 mt-1">Be the first to list your business!</p>
+              <p className="text-sm font-semibold text-gray-500">No helpers listed yet</p>
+              <p className="text-xs text-gray-400 mt-1">Check back soon for nearby community help.</p>
               <button
-                onClick={() => navigate("/business")}
+                onClick={() => navigate("/request")}
                 className="mt-4 bg-blue-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl"
               >
-                Create Listing
+                Post a Request
               </button>
             </div>
           ) : (
@@ -217,18 +224,18 @@ export const Home = () => {
           )}
         </section>
 
-        {/* Near You (only when signed in) */}
+        {/* Nearby helpers (only when signed in) */}
         {showDistance && (
           <section>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-bold text-gray-900">Near You</h2>
+              <h2 className="text-base font-bold text-gray-900">Nearby Helpers</h2>
               <button onClick={() => navigate("/map")} className="text-xs font-semibold text-blue-500">Map View</button>
             </div>
             {nearbyProviders.length === 0 ? (
               <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
                 <p className="text-2xl mb-2">📍</p>
                 <p className="text-sm text-gray-400">
-                  {hasLocation ? "No businesses within 10 miles" : "Update your location to see nearby businesses"}
+                  {hasLocation ? "No helpers within 10 miles yet" : "Update your location to see nearby helpers"}
                 </p>
                 <button
                   onClick={() => setShowLocation(true)}
@@ -264,7 +271,7 @@ export const Home = () => {
             </div>
             <div className="flex-1">
               <p className="text-white font-bold text-sm">Unlock more features</p>
-              <p className="text-gray-400 text-xs">Sign in to see nearby pros & track jobs</p>
+              <p className="text-gray-400 text-xs">Sign in to see nearby helpers and track requests</p>
             </div>
             <button
               onClick={() => navigate("/account")}

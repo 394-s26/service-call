@@ -105,6 +105,33 @@ const AppContext = createContext<AppContextValue>({
   getUserReviewForProvider: () => undefined,
 });
 
+const PROVIDERS_STORAGE_KEY = "servicecall_marketplace_providers";
+const REQUESTS_STORAGE_KEY = "servicecall_marketplace_requests";
+
+const loadStoredProviders = (): ServiceProvider[] => {
+  try {
+    const raw = localStorage.getItem(PROVIDERS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as ServiceProvider[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const loadStoredRequests = (): ServiceRequest[] => {
+  try {
+    const raw = localStorage.getItem(REQUESTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Array<ServiceRequest & { createdAt: string; updatedAt: string }>;
+    return parsed.map((r) => ({
+      ...r,
+      createdAt: new Date(r.createdAt),
+      updatedAt: new Date(r.updatedAt),
+    }));
+  } catch {
+    return [];
+  }
+};
+
 export const AppProvider = ({ children }: PropsWithChildren) => {
   const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
   const [location, setLocation] = useState("Detecting location…");
@@ -113,10 +140,10 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
   const [locationDetecting, setLocationDetecting] = useState(true);
   const [locationDetected, setLocationDetected] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [providers, setProviders] = useState<ServiceProvider[]>([]);
+  const [providers, setProviders] = useState<ServiceProvider[]>(() => loadStoredProviders());
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
-  const [requests, setRequests] = useState<ServiceRequest[]>([]);
+  const [requests, setRequests] = useState<ServiceRequest[]>(() => loadStoredRequests());
   const [payments, setPayments] = useState<Payment[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
 
@@ -189,6 +216,22 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
       { timeout: 8000, enableHighAccuracy: false }
     );
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(providers));
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [providers]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(requests));
+    } catch {
+      // ignore localStorage errors
+    }
+  }, [requests]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
