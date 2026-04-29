@@ -6,6 +6,7 @@ import {
   useEffect,
   type PropsWithChildren,
 } from "react";
+import { collection, onSnapshot, query, addDoc, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
 import type {
   Notification,
   ServiceProvider,
@@ -15,6 +16,7 @@ import type {
   Payment,
   Review,
 } from "../types";
+import { db, isFirebaseConfigured } from "../services/firebase";
 
 interface AppContextValue {
   // Bookmarks
@@ -105,17 +107,7 @@ const AppContext = createContext<AppContextValue>({
   getUserReviewForProvider: () => undefined,
 });
 
-const PROVIDERS_STORAGE_KEY = "servicecall_marketplace_providers";
 const REQUESTS_STORAGE_KEY = "servicecall_marketplace_requests";
-
-const loadStoredProviders = (): ServiceProvider[] => {
-  try {
-    const raw = localStorage.getItem(PROVIDERS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as ServiceProvider[]) : [];
-  } catch {
-    return [];
-  }
-};
 
 const loadStoredRequests = (): ServiceRequest[] => {
   try {
@@ -140,12 +132,25 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
   const [locationDetecting, setLocationDetecting] = useState(true);
   const [locationDetected, setLocationDetected] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [providers, setProviders] = useState<ServiceProvider[]>(() => loadStoredProviders());
+  const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [requests, setRequests] = useState<ServiceRequest[]>(() => loadStoredRequests());
   const [payments, setPayments] = useState<Payment[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+
+  // ── Firestore: real-time providers ──────────────────────────────────────────
+  useEffect(() => {
+    if (!isFirebaseConfigured) return;
+    const unsub = onSnapshot(
+      query(collection(db, "providers")),
+      (snap) => {
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ServiceProvider[];
+        setProviders(data);
+      }
+    );
+    return () => unsub();
+  }, []);
 
   const toggleBookmark = (id: string) => {
     setBookmarked((prev) => {
@@ -219,14 +224,6 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(PROVIDERS_STORAGE_KEY, JSON.stringify(providers));
-    } catch {
-      // ignore localStorage errors
-    }
-  }, [providers]);
-
-  useEffect(() => {
-    try {
       localStorage.setItem(REQUESTS_STORAGE_KEY, JSON.stringify(requests));
     } catch {
       // ignore localStorage errors
@@ -254,7 +251,18 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
     setNotifications((prev) => [notif, ...prev]);
   };
 
-  const addProvider = useCallback((p: ServiceProvider) => {
+  const addProvider = useCallback(async (p: ServiceProvider) => {
+    if (isFirebaseConfigured) {
+      const { id: _id, ...data } = p;
+      const clean = Object.fromEntries(
+        Object.entries(data).filter(([, v]) => v !== undefined)
+      );
+      await addDoc(collection(db, "providers"), {
+        ...clean,
+        createdAt: serverTimestamp(),
+      });
+      return;
+    }
     setProviders((prev) => [...prev, p]);
   }, []);
 
@@ -264,7 +272,11 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
     );
   }, []);
 
-  const removeProvider = useCallback((id: string) => {
+  const removeProvider = useCallback(async (id: string) => {
+    if (isFirebaseConfigured) {
+      await deleteDoc(doc(db, "providers", id));
+      return;
+    }
     setProviders((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
@@ -324,7 +336,7 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
 
   const updateRequest = useCallback((id: string, updates: Partial<ServiceRequest>) => {
     setRequests((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
+      prev.map((r) => (r.id === id ? { ...r, ...updates } as ServiceRequest : r))
     );
   }, []);
 
@@ -355,11 +367,9 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
       createdAt: new Date(),
     };
     setReviews((prev) => {
-      // Enforce one review per user per provider — if exists, replace
       const filtered = prev.filter(rv => !(rv.providerId === r.providerId && rv.userId === r.userId));
       return [review, ...filtered];
     });
-    // Recalculate provider rating
     setProviders((prev) =>
       prev.map((p) => {
         if (p.id !== r.providerId) return p;
@@ -372,7 +382,6 @@ export const AppProvider = ({ children }: PropsWithChildren) => {
 
   const updateReview = useCallback((id: string, updates: Pick<Review, "rating" | "comment">) => {
     setReviews((prev) => prev.map((r) => r.id === id ? { ...r, ...updates } : r));
-    // Recalculate provider rating after edit
     setReviews((prev) => {
       const updated = prev.find(r => r.id === id);
       if (!updated) return prev;
