@@ -1,11 +1,12 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppContext } from "../hooks/useAppContext";
 import { useAuth } from "../hooks/useAuth";
 import { signInWithGoogle } from "../services/authService";
 import { MOCK_CATEGORIES, formatCurrency, getStatusColor, getStatusLabel } from "../utilities/mockData";
 import { getHelperAdvanceAction, getHelperWaitingMessage } from "../utilities/jobFlow";
-import type { ServiceProvider } from "../types";
+import type { ServiceProvider, ServiceRequest } from "../types";
+import { updateServiceRequest, updateDriverLocation } from "../services/providerService";
 
 const GOOGLE_MAPS_API = import.meta.env.VITE_GOOGLE_MAPS_API;
 
@@ -67,6 +68,17 @@ export const BusinessDashboard = () => {
   const [locationSuggestionsLoading, setLocationSuggestionsLoading] = useState(false);
   const formRef = useRef<HTMLDivElement>(null);
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const lastLocationWriteRef = useRef<number>(0);
+
+  // Stop the geolocation watch when the component unmounts
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
 
   const myListings = providers.filter((p) => p.ownerUid === user?.uid);
   const myRequests = requests.filter((r) => myListings.some((l) => l.id === r.providerId));
@@ -300,13 +312,51 @@ export const BusinessDashboard = () => {
     addNotification({ userId: customerUserId, title, body, read: false, requestId });
   };
 
-  /** Advance job stage and ping the customer (same pattern as delivery status updates). */
+  const stopLocationWatch = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+  };
+
+  const startLocationWatch = (requestId: string) => {
+    stopLocationWatch();
+    if (!navigator.geolocation) return;
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now();
+        // Throttle Firestore writes to once every 10 seconds
+        if (now - lastLocationWriteRef.current < 10_000) return;
+        lastLocationWriteRef.current = now;
+        void updateDriverLocation(requestId, pos.coords.latitude, pos.coords.longitude);
+      },
+      () => { /* ignore GPS errors — location panel will show last known */ },
+      { enableHighAccuracy: true, maximumAge: 5_000 }
+    );
+  };
+
+  /** Advance job stage, track location while en_route, and ping the customer. */
   const handleAdvanceJob = (reqId: string) => {
     const req = requests.find((r) => r.id === reqId);
     if (!req) return;
     const action = getHelperAdvanceAction(req);
     if (!action) return;
-    updateRequest(reqId, { status: action.nextStatus, updatedAt: new Date() });
+
+    const updates: Partial<ServiceRequest> = { status: action.nextStatus, updatedAt: new Date() };
+
+    if (action.nextStatus === "en_route") {
+      startLocationWatch(reqId);
+    } else if (action.nextStatus === "in_progress") {
+      stopLocationWatch();
+      updates.jobStartedAt = new Date();
+    } else {
+      stopLocationWatch();
+    }
+
+    updateRequest(reqId, updates);
+    void updateServiceRequest(reqId, updates).catch(() => {
+      // Firestore unavailable (local dev) — local state already updated
+    });
     notifyCustomerAboutJob(req.userId, action.customerTitle, action.customerBody, reqId);
   };
 

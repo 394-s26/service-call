@@ -50,6 +50,10 @@ export interface ServiceRequest {
   quote?: number;
   quoteAccepted?: boolean;
   paymentStatus?: "pending" | "paid" | "refunded";
+  // ETA tracking
+  estimatedArrivalTime?: Date;
+  estimatedCompletionTime?: Date;
+  jobStartedAt?: Date;
 }
 
 export type ServiceRequestStatus =

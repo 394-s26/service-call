@@ -12,6 +12,7 @@ import {
   isPipelineComplete,
 } from "../utilities/jobFlow";
 import { useAppContext } from "../hooks/useAppContext";
+import { JobEtaPanel } from "./JobEtaPanel";
 
 export const Account = () => {
   const { user, loading } = useAuth();
@@ -318,6 +319,8 @@ export const Account = () => {
                   </div>
 
                   <p className="text-xs text-gray-500 mb-3 leading-relaxed">{getCustomerStatusExplanation(req.status)}</p>
+
+                  <JobEtaPanel request={req} />
 
                   {provider && (
                     <div className="flex items-center gap-2 mb-3 bg-gray-50 rounded-xl p-2.5">

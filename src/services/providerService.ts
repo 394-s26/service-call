@@ -6,6 +6,8 @@ import {
   doc,
   getDoc,
   addDoc,
+  updateDoc,
+  setDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -95,6 +97,40 @@ export const getUserBookmarks = async (userId: string): Promise<Bookmark[]> => {
     });
   } catch (error) {
     throw new Error(`Failed to fetch bookmarks: ${error}`);
+  }
+};
+
+export const updateServiceRequest = async (
+  id: string,
+  updates: Partial<ServiceRequest>
+): Promise<void> => {
+  try {
+    await updateDoc(doc(db, "serviceRequests", id), {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    throw new Error(`Failed to update request: ${error}`);
+  }
+};
+
+/**
+ * Writes (or overwrites) the driver's current coordinates for a given job.
+ * Called by the driver's device every ~10 seconds while en_route.
+ */
+export const updateDriverLocation = async (
+  requestId: string,
+  lat: number,
+  lng: number
+): Promise<void> => {
+  try {
+    await setDoc(doc(db, "driverLocations", requestId), {
+      lat,
+      lng,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    throw new Error(`Failed to update driver location: ${error}`);
   }
 };
 
