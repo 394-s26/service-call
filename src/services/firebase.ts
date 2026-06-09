@@ -74,6 +74,8 @@ if (typeof window !== "undefined" && useEmulators && !globalThis.EMULATION) {
     GoogleAuthProvider.credential(
       '{"sub": "test-user-1", "email": "tester@gmail.com", "displayName": "Test User", "email_verified": true}'
     )
+  ).then(() =>
+    import("../utilities/emulatorSeed").then((mod) => mod.seedEmulatorProviders())
   );
 
   globalThis.EMULATION = true;

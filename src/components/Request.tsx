@@ -50,6 +50,7 @@ export const Request = () => {
   const [form, setForm] = useState<RequestForm>({
     ...INITIAL_FORM,
     providerId: preselectedProviderId,
+    openToAnyHelper: !preselectedProviderId,
     address: "",
   });
   const [step, setStep] = useState<Step>(preselectedProviderId ? 3 : 1);
@@ -160,7 +161,7 @@ export const Request = () => {
         <div className="w-20 h-20 rounded-3xl bg-emerald-50 flex items-center justify-center mb-5">
           <span className="text-4xl">✅</span>
         </div>
-        <h2 className="text-2xl font-black text-gray-900 mb-2">Request Posted!</h2>
+        <h2 data-cy="request-success" className="text-2xl font-black text-gray-900 mb-2">Request Posted!</h2>
         <p className="text-sm text-gray-500 mb-2 max-w-xs">
           {selectedProvider ? (
             <>
@@ -362,7 +363,10 @@ export const Request = () => {
                       onSelect={() => handleChange("providerId", p.id)} detailed />
                   ))}
                 </div>
-                <button onClick={() => step3Valid && goNext()} disabled={!step3Valid}
+                <button
+                  data-cy="confirm-helper"
+                  onClick={() => step3Valid && goNext()}
+                  disabled={!step3Valid}
                   className={`w-full py-4 rounded-2xl text-sm font-black transition-all ${step3Valid ? "bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98]" : "bg-gray-100 text-gray-400"}`}>
                   {step3Valid ? "Confirm Helper →" : "Select a Helper to Continue"}
                 </button>
@@ -397,7 +401,9 @@ export const Request = () => {
               <h3 className="text-sm font-black text-gray-900 mb-1">Service address <span className="text-red-400">*</span></h3>
               <p className="text-xs text-gray-400 mb-3">Where should the helper come?</p>
               <div className="relative">
-                <input value={form.address}
+                <input
+                  data-cy="request-address"
+                  value={form.address}
                   onChange={(e) => { handleChange("address", e.target.value); fetchAddressSuggestions(e.target.value); setShowSuggestions(true); }}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   placeholder="e.g. 123 Main St, Brooklyn, NY 11201"
@@ -425,7 +431,10 @@ export const Request = () => {
                   className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm text-gray-700 border border-gray-100 focus:border-blue-300 focus:bg-white transition-colors" />
               </div>
             )}
-            <button onClick={() => step4Valid && goNext()} disabled={!step4Valid}
+            <button
+              data-cy="review-confirm"
+              onClick={() => step4Valid && goNext()}
+              disabled={!step4Valid}
               className={`w-full py-4 rounded-2xl text-sm font-black transition-all ${step4Valid ? "bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98]" : "bg-gray-100 text-gray-400"}`}>
               Review & Confirm →
             </button>
@@ -456,7 +465,10 @@ export const Request = () => {
             <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
               <p className="text-xs text-gray-500 leading-relaxed">By submitting you agree that nearby helpers can contact you about this task. Payment should only happen after work is complete.</p>
             </div>
-            <button onClick={handleSubmit} disabled={loading || !user}
+            <button
+              data-cy="submit-request"
+              onClick={handleSubmit}
+              disabled={loading || !user}
               className={`w-full py-4 rounded-2xl text-sm font-black transition-all ${!loading && user ? "bg-blue-500 text-white shadow-lg shadow-blue-200 active:scale-[0.98]" : "bg-gray-100 text-gray-400"}`}>
               {loading ? (
                 <span className="flex items-center justify-center gap-2">

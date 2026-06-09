@@ -453,6 +453,7 @@ export const ProviderDetail = () => {
               Message
             </button>
             <button
+              data-cy="book-provider"
               onClick={handleRequest}
               disabled={!provider.available}
               className={`flex-2 flex-1 font-black py-3.5 rounded-2xl text-sm transition-all active:scale-[0.98] ${
