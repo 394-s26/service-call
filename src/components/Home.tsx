@@ -145,6 +145,7 @@ export const Home = () => {
         <div className="grid grid-cols-2 gap-3">
           {/* Customer CTA */}
           <button
+            data-cy="request-cta"
             onClick={() => navigate("/request")}
             className="card-press bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-4 text-left shadow-lg shadow-blue-200/60"
           >
